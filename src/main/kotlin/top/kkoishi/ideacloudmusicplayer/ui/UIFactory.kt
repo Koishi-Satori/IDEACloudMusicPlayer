@@ -1,6 +1,8 @@
 package top.kkoishi.ideacloudmusicplayer.ui
 
 import com.intellij.openapi.diagnostic.thisLogger
+import com.intellij.openapi.observable.util.heightProperty
+import com.intellij.openapi.observable.util.sizeProperty
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.popup.JBPopupFactory
 import com.intellij.openapi.util.io.toCanonicalPath
@@ -30,13 +32,19 @@ import top.kkoishi.ideacloudmusicplayer.Players
 import top.kkoishi.ideacloudmusicplayer.io.CacheConfig
 import java.awt.BorderLayout
 import java.awt.Point
+import java.awt.Toolkit
+import java.awt.datatransfer.StringSelection
 import java.awt.event.MouseEvent
 import java.awt.event.MouseEvent.BUTTON3
 import java.io.IOException
 import java.nio.file.Path
+import java.text.SimpleDateFormat
+import java.time.Instant
+import java.util.*
 import javax.swing.*
 import javax.swing.event.MouseInputAdapter
 import kotlin.NullPointerException
+import kotlin.collections.ArrayDeque
 import kotlin.io.path.createDirectories
 import kotlin.io.path.isDirectory
 import kotlin.io.path.notExists
@@ -170,6 +178,17 @@ class UIFactory : ToolWindowFactory {
                     player.keep()
                 }
             })
+            bottomPanel.add(JButton(Bundles.message("button.copy.id")).apply {
+                addActionListener {
+                    val info = this@MainToolWindow.info
+                    if (info != null) {
+                        Toolkit.getDefaultToolkit().systemClipboard.setContents(
+                            StringSelection(info.id.toString()),
+                            null
+                        )
+                    }
+                }
+            })
 
             add(topPanel, BorderLayout.NORTH)
             add(infoPanel, BorderLayout.CENTER)
@@ -187,18 +206,26 @@ class UIFactory : ToolWindowFactory {
                 .apply { autoscrolls = true }
             val playLists = PlayList.getCachedLists()
             val list = JBList(playLists)
-                .apply { selectionMode = ListSelectionModel.SINGLE_SELECTION }
-            topPanel.add(list, BorderLayout.CENTER)
+                .apply {
+                    selectionMode = ListSelectionModel.SINGLE_SELECTION
+                    visibleRowCount = 1
+                    autoscrolls = true
+                }
+            topPanel.add(JBScrollPane(list), BorderLayout.CENTER)
             topPanel.add(JButton(Bundles.message("button.refresh")).apply {
                 addActionListener {
                     playLists.clear()
                     playLists.addAll(PlayList.getCachedLists())
                     list.setListData(playLists.toTypedArray())
+                    if (index >= playLists.size || index < 0)
+                        index = 0
+                    if (playLists.isNotEmpty())
+                        textArea.text = playLists[index].getDisplayText()
                 }
             }, BorderLayout.EAST)
             topPanel.add(JButton(Bundles.message("button.list.new")).apply {
                 addActionListener {
-                    val text = System.currentTimeMillis().toString()
+                    val text = "PlayList ${SimpleDateFormat().format(Date.from(Instant.now()))}"
                     if (text.isNotEmpty()) {
                         playLists.add(PlayList(text, longArrayOf()))
                         index = playLists.lastIndex
@@ -209,11 +236,16 @@ class UIFactory : ToolWindowFactory {
                 }
             }, BorderLayout.WEST)
             list.addListSelectionListener {
-                index = it.firstIndex
-                textArea.text = playLists[index].getDisplayText()
+                index = list.selectedIndex
+                println(index)
+                if (index < 0 || index > playLists.size)
+                    index = 0
+                if (playLists.isNotEmpty())
+                    textArea.text = playLists[index].getDisplayText()
             }
 
-            songListInfoPanel.add(textArea, BorderLayout.CENTER)
+            textArea.autoscrolls = true
+            songListInfoPanel.add(JBScrollPane(textArea), BorderLayout.CENTER)
 
             bottomPanel.add(songIDInput, BorderLayout.CENTER)
             bottomPanel.add(JButton(Bundles.message("button.list.add")).apply {
