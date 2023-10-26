@@ -1,0 +1,33 @@
+<!-- Plugin Configuration File. Read more: https://plugins.jetbrains.com/docs/intellij/plugin-configuration-file.html -->
+<idea-plugin>
+    <!-- Unique identifier of the plugin. It should be FQN. It cannot be changed between the plugin versions. -->
+    <id>top.kkoishi.IDEACloudMusicPlayer</id>
+
+    <!-- Public plugin name should be written in Title Case.
+         Guidelines: https://plugins.jetbrains.com/docs/marketplace/plugin-overview-page.html#plugin-name -->
+    <name>IDEACloudMusicPlayer</name>
+
+    <!-- A displayed Vendor name or Organization ID displayed on the Plugins Page. -->
+    <vendor email="1580412105@qq.com">top.kkoishi</vendor>
+
+    <!-- Description of the plugin displayed on the Plugin Page and IDE Plugin Manager.
+         Simple HTML elements (text formatting, paragraphs, and lists) can be added inside of <![CDATA[ ]]> tag.
+         Guidelines: https://plugins.jetbrains.com/docs/marketplace/plugin-overview-page.html#plugin-description -->
+    <description>A simple Plugin which can search and play the musics of CloudMusic.</description>
+
+    <!-- Product and plugin compatibility requirements.
+         Read more: https://plugins.jetbrains.com/docs/intellij/plugin-compatibility.html -->
+    <depends>com.intellij.modules.platform</depends>
+
+    <!-- Extension points defined by the plugin.
+         Read more: https://plugins.jetbrains.com/docs/intellij/plugin-extension-points.html -->
+    <extensions defaultExtensionNs="com.intellij">
+        <toolWindow factoryClass="top.kkoishi.ideacloudmusicplayer.ui.UIFactory" id="CloudMusic"/>
+        <applicationService serviceImplementation="top.kkoishi.ideacloudmusicplayer.io.CacheConfig"/>
+        <applicationConfigurable
+                parentId="tools"
+                instance="top.kkoishi.ideacloudmusicplayer.io.CacheSettingsConfigurable"
+                id="top.kkoishi.ideacloudmusicplayer.io.CacheSettingsConfigurable"
+                displayName="CloudMusicPlayer: Cache"/>
+    </extensions>
+</idea-plugin>
