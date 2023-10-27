@@ -100,6 +100,7 @@ class UIFactory : ToolWindowFactory {
                         val index = songListTitles.indexOf(selected)
                         if (index != -1) {
                             songLists[index].songs = songLists[index].songs + info.id
+                            PlayList.storeCache(songLists)
                         }
                     }
                 }
