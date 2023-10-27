@@ -5,6 +5,7 @@ import com.intellij.util.io.isFile
 import top.kkoishi.cloudmusic.response.SongSearchResponse
 import top.kkoishi.cloudmusic.util.StringExtension.isDigit
 import top.kkoishi.ideacloudmusicplayer.io.CacheConfig
+import top.kkoishi.ideacloudmusicplayer.io.IOUtil.createIfNotExists
 import java.nio.file.Path
 import kotlin.io.path.*
 
@@ -99,8 +100,7 @@ data class PlayList(val name: String, var songs: LongArray) {
         fun storeCache(lists: MutableList<PlayList>) {
             val config = CacheConfig.getInstance()
             val songListCacheFile = Path.of("${config.cacheDir}/.lists")
-            if (songListCacheFile.notExists())
-                songListCacheFile.createFile()
+                .createIfNotExists()
 
             songListCacheFile.writeText(Bundles.GSON.toJson(lists.toTypedArray()))
         }

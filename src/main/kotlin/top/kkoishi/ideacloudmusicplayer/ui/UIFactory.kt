@@ -1,8 +1,6 @@
 package top.kkoishi.ideacloudmusicplayer.ui
 
 import com.intellij.openapi.diagnostic.thisLogger
-import com.intellij.openapi.observable.util.heightProperty
-import com.intellij.openapi.observable.util.sizeProperty
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.popup.JBPopupFactory
 import com.intellij.openapi.util.io.toCanonicalPath
@@ -20,7 +18,6 @@ import com.intellij.ui.components.JBTextField
 import com.intellij.ui.content.ContentFactory
 import com.intellij.ui.table.JBTable
 import com.intellij.ui.util.preferredHeight
-import com.intellij.util.io.createFile
 import com.intellij.util.io.readText
 import top.kkoishi.cloudmusic.api.SearchApi
 import top.kkoishi.cloudmusic.response.AccessSongResponse
@@ -30,6 +27,7 @@ import top.kkoishi.ideacloudmusicplayer.Bundles
 import top.kkoishi.ideacloudmusicplayer.PlayList
 import top.kkoishi.ideacloudmusicplayer.Players
 import top.kkoishi.ideacloudmusicplayer.io.CacheConfig
+import top.kkoishi.ideacloudmusicplayer.io.IOUtil.createIfNotExists
 import java.awt.BorderLayout
 import java.awt.Point
 import java.awt.Toolkit
@@ -38,14 +36,11 @@ import java.awt.event.MouseEvent
 import java.awt.event.MouseEvent.BUTTON3
 import java.io.IOException
 import java.nio.file.Path
-import java.text.SimpleDateFormat
-import java.time.Instant
 import java.util.*
 import javax.swing.*
 import javax.swing.event.MouseInputAdapter
 import kotlin.NullPointerException
 import kotlin.collections.ArrayDeque
-import kotlin.io.path.createDirectories
 import kotlin.io.path.isDirectory
 import kotlin.io.path.notExists
 import kotlin.io.path.writeText
@@ -81,14 +76,61 @@ class UIFactory : ToolWindowFactory {
                 info(info)
             },
             { _: String, info: SongSearchResponse.SongInfo ->
+                try {
+                    val p = downloadSong(info)
+                    Players.getInstantce().addAudio(p.toNioPath())
+                } catch (e: Exception) {
+                    throw RuntimeException(e)
+                }
             },
             { _: String, info: SongSearchResponse.SongInfo ->
+                try {
+                    downloadSong(info)
+                } catch (e: Exception) {
+                    throw RuntimeException(e)
+                }
+
+                val songLists = PlayList.getCachedLists()
+                val songListTitles = songLists.map { it.name }.toTypedArray()
+                val dialog =
+                    ListSelectionDialog("Select Song List to Insert:", *songListTitles)
+                if (dialog.showAndGet()) {
+                    val selected = dialog.selectedValue
+                    if (selected != null) {
+                        val index = songListTitles.indexOf(selected)
+                        if (index != -1) {
+                            songLists[index].songs = songLists[index].songs + info.id
+                        }
+                    }
+                }
             }
         )
 
         private fun getInfoString(info: SongSearchResponse.SongInfo): String {
-            val sb = StringBuilder("id: ")
-            sb.append(info.id).append("\nname").append(info.name)
+            val sb = StringBuilder("id: ").append(info.id)
+                .append("\nname: ").append(info.name)
+                .append("\nartists: ")
+
+            with(info.artists.iterator()) {
+                while (hasNext()) {
+                    sb.append(next().name)
+                    if (!hasNext())
+                        break
+                    sb.append(", ")
+                }
+            }
+
+            sb.append("\nduration: ").append(info.duration)
+                .append("\nalias: ")
+
+            with(info.alias.iterator()) {
+                while (hasNext()) {
+                    sb.append(next())
+                    if (!hasNext())
+                        break
+                    sb.append(", ")
+                }
+            }
             return sb.toString()
         }
 
@@ -117,12 +159,7 @@ class UIFactory : ToolWindowFactory {
                     val cache =
                         Path.of("${config.cacheDir}/songs/${info.id}.${response.type}")
                     val songIndex = Path.of("${config.cacheDir}/song_indexes.json")
-
-                    if (songIndex.notExists()) {
-                        if (songIndex.parent.notExists())
-                            songIndex.parent.createDirectories()
-                        songIndex.createFile()
-                    }
+                        .createIfNotExists()
 
                     var indexJson = songIndex.readText()
                     indexJson = if (indexJson.isEmpty())
@@ -199,8 +236,7 @@ class UIFactory : ToolWindowFactory {
             val topPanel = JBPanel<JBPanel<*>>(BorderLayout())
             val songListInfoPanel = JBPanel<JBPanel<*>>(BorderLayout())
             val bottomPanel = JBPanel<JBPanel<*>>(BorderLayout())
-            var index: Int = 0
-
+            var index = -1
             val songIDInput = JBTextField()
             val textArea = JBTextArea()
                 .apply { autoscrolls = true }
@@ -211,6 +247,13 @@ class UIFactory : ToolWindowFactory {
                     visibleRowCount = 1
                     autoscrolls = true
                 }
+
+            fun updateDataWithoutCheck() {
+                textArea.text = playLists[index].getDisplayText()
+                textArea.moveCaretPosition(0)
+                list.setListData(playLists.toTypedArray())
+            }
+
             topPanel.add(JBScrollPane(list), BorderLayout.CENTER)
             topPanel.add(JButton(Bundles.message("button.refresh")).apply {
                 addActionListener {
@@ -220,24 +263,25 @@ class UIFactory : ToolWindowFactory {
                     if (index >= playLists.size || index < 0)
                         index = 0
                     if (playLists.isNotEmpty())
-                        textArea.text = playLists[index].getDisplayText()
+                        updateDataWithoutCheck()
                 }
             }, BorderLayout.EAST)
             topPanel.add(JButton(Bundles.message("button.list.new")).apply {
                 addActionListener {
-                    val text = "PlayList ${SimpleDateFormat().format(Date.from(Instant.now()))}"
-                    if (text.isNotEmpty()) {
-                        playLists.add(PlayList(text, longArrayOf()))
-                        index = playLists.lastIndex
-                        textArea.text = playLists[index].getDisplayText()
-                        list.setListData(playLists.toTypedArray())
-                        PlayList.storeCache(playLists)
+                    val input = InputDialog("Input Song List Name: ")
+                    if (input.showAndGet()) {
+                        val text = input.getInput()
+                        if (text.isNotEmpty()) {
+                            playLists.add(PlayList(text, longArrayOf()))
+                            index = playLists.lastIndex
+                            updateDataWithoutCheck()
+                            PlayList.storeCache(playLists)
+                        }
                     }
                 }
             }, BorderLayout.WEST)
             list.addListSelectionListener {
                 index = list.selectedIndex
-                println(index)
                 if (index < 0 || index > playLists.size)
                     index = 0
                 if (playLists.isNotEmpty())
@@ -247,25 +291,43 @@ class UIFactory : ToolWindowFactory {
             textArea.autoscrolls = true
             songListInfoPanel.add(JBScrollPane(textArea), BorderLayout.CENTER)
 
-            bottomPanel.add(songIDInput, BorderLayout.CENTER)
-            bottomPanel.add(JButton(Bundles.message("button.list.add")).apply {
+            val bottomSubPanel = JBPanel<JBPanel<*>>()
+            val bottomMainPanel = JBPanel<JBPanel<*>>(BorderLayout())
+            bottomSubPanel.add(JButton(Bundles.message("button.list.delete")).apply {
+                addActionListener {
+                    if (playLists.isNotEmpty() && index >= 0 && index < playLists.size) {
+                        val cur = playLists[index]
+                        println("remove play list: $cur")
+                        playLists.removeAt(index)
+                        PlayList.storeCache(playLists)
+                        index = 0
+
+                        if (playLists.isNotEmpty())
+                            updateDataWithoutCheck()
+                    }
+                }
+            })
+            bottomSubPanel.add(JButton(Bundles.message("button.list.manage")).apply {
+                // TODO: add actions
+            })
+            bottomMainPanel.add(songIDInput, BorderLayout.CENTER)
+            bottomMainPanel.add(JButton(Bundles.message("button.list.add")).apply {
                 addActionListener {
                     val id = songIDInput.text
                     if (id.isDigit()) {
-                        if (playLists.isNotEmpty() && index < playLists.size) {
+                        if (playLists.isNotEmpty() && index < playLists.size && index >= 0) {
                             val cur = playLists[index]
                             cur.songs = cur.songs + id.toLong()
 
-                            textArea.text = playLists[index].getDisplayText()
-                            list.setListData(playLists.toTypedArray())
+                            updateDataWithoutCheck()
                             PlayList.storeCache(playLists)
                         }
                     }
                 }
             }, BorderLayout.EAST)
-            bottomPanel.add(JButton(Bundles.message("button.list.play")).apply {
+            bottomMainPanel.add(JButton(Bundles.message("button.list.play")).apply {
                 addActionListener {
-                    if (playLists.isNotEmpty() && index < playLists.size) {
+                    if (playLists.isNotEmpty() && index < playLists.size && index >= 0) {
                         val cur = playLists[index]
                         val config = CacheConfig.getInstance()
                         val cachedSongDir = Path.of("${config.cacheDir}/songs/")
@@ -281,10 +343,14 @@ class UIFactory : ToolWindowFactory {
                                 return@filter cur.songs.contains(it.nameWithoutExtension.toLong())
                             }
                             .map { it.canonicalPath.toNioPath() }
+                            .shuffled()
                             .forEach { players.addAudio(it) }
                     }
                 }
             }, BorderLayout.WEST)
+
+            bottomPanel.add(bottomSubPanel, BorderLayout.WEST)
+            bottomPanel.add(bottomMainPanel, BorderLayout.CENTER)
 
             add(topPanel, BorderLayout.NORTH)
             add(songListInfoPanel, BorderLayout.CENTER)
@@ -333,6 +399,8 @@ class UIFactory : ToolWindowFactory {
                     } catch (npe: NullPointerException) {
                         thisLogger().warn(npe)
                         // do nothing
+                    } finally {
+                        table.updateUI()
                     }
                 }
             }
@@ -342,10 +410,6 @@ class UIFactory : ToolWindowFactory {
                         val row = table.rowAtPoint(Point(e.x, e.y))
                         if (row == 0)
                             return
-//                        JBPopupFactory.getInstance()
-//                            .createConfirmation(Bundles.message("popup.info"), {
-//                                println(songData[row - 1])
-//                            }, 0).show(RelativePoint(e))
 
                         JBPopupFactory.getInstance()
                             .createPopupChooserBuilder(itemsInSearch)
@@ -388,6 +452,8 @@ class UIFactory : ToolWindowFactory {
                         } catch (npe: NullPointerException) {
                             thisLogger().warn(npe)
                             // do nothing
+                        } finally {
+                            table.updateUI()
                         }
                     }
                 }
@@ -411,6 +477,8 @@ class UIFactory : ToolWindowFactory {
                         } catch (npe: NullPointerException) {
                             thisLogger().warn(npe)
                             // do nothing
+                        } finally {
+                            table.updateUI()
                         }
                     }
                 }
@@ -432,6 +500,8 @@ class UIFactory : ToolWindowFactory {
                         } catch (npe: NullPointerException) {
                             thisLogger().warn(npe)
                             // do nothing
+                        } finally {
+                            table.updateUI()
                         }
                     }
                 }
@@ -449,6 +519,7 @@ class UIFactory : ToolWindowFactory {
                 ), BorderLayout.CENTER
             )
             add(bottomSubPanel, BorderLayout.SOUTH)
+            updateUI()
         }
 
         fun content() = JBPanel<JBPanel<*>>(BorderLayout()).apply {

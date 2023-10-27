@@ -85,7 +85,7 @@ class Players private constructor() : Runnable {
 
     class AudioPlayer {
         private val lock = Any()
-        private lateinit var grabber: FFmpegFrameGrabber
+        lateinit var grabber: FFmpegFrameGrabber
         private var format: AudioFormat? = null
         private lateinit var line: SourceDataLine
         private lateinit var info: DataLine.Info
@@ -103,6 +103,10 @@ class Players private constructor() : Runnable {
         private lateinit var combine: ByteArray
         private var stop = false
         private var end = false
+
+        fun initialized(): Boolean {
+            return this::grabber.isInitialized
+        }
 
         fun isEnd(): Boolean {
             synchronized(lock) {
