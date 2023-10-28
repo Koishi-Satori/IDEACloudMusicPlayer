@@ -2,6 +2,7 @@ package top.kkoishi.ideacloudmusicplayer.ui
 
 import com.intellij.openapi.diagnostic.thisLogger
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.ui.asSequence
 import com.intellij.openapi.ui.popup.JBPopupFactory
 import com.intellij.openapi.util.io.toCanonicalPath
 import com.intellij.openapi.util.io.toNioPath
@@ -24,8 +25,10 @@ import top.kkoishi.cloudmusic.response.AccessSongResponse
 import top.kkoishi.cloudmusic.response.SongSearchResponse
 import top.kkoishi.cloudmusic.util.StringExtension.isDigit
 import top.kkoishi.ideacloudmusicplayer.Bundles
+import top.kkoishi.ideacloudmusicplayer.Bundles.msToFormattedTime
 import top.kkoishi.ideacloudmusicplayer.PlayList
 import top.kkoishi.ideacloudmusicplayer.Players
+import top.kkoishi.ideacloudmusicplayer.ThreadPool
 import top.kkoishi.ideacloudmusicplayer.io.CacheConfig
 import top.kkoishi.ideacloudmusicplayer.io.IOUtil.createIfNotExists
 import java.awt.BorderLayout
@@ -42,6 +45,7 @@ import javax.swing.event.MouseInputAdapter
 import kotlin.NullPointerException
 import kotlin.collections.ArrayDeque
 import kotlin.io.path.isDirectory
+import kotlin.io.path.nameWithoutExtension
 import kotlin.io.path.notExists
 import kotlin.io.path.writeText
 
@@ -51,7 +55,7 @@ class UIFactory : ToolWindowFactory {
     }
 
     override fun createToolWindowContent(project: Project, toolWindow: ToolWindow) {
-        val main = MainToolWindow(project)
+        val main = MainToolWindow()
         val content = ContentFactory
             .getInstance()
             .createContent(main.content(), null, false)
@@ -60,7 +64,7 @@ class UIFactory : ToolWindowFactory {
 
     override fun shouldBeAvailable(project: Project): Boolean = true
 
-    class MainToolWindow(private val project: Project) {
+    class MainToolWindow {
         private val root = JBTabbedPane(4)
         private var info: SongSearchResponse.SongInfo? = null
         private val infoText = JBTextArea()
@@ -78,7 +82,7 @@ class UIFactory : ToolWindowFactory {
             { _: String, info: SongSearchResponse.SongInfo ->
                 try {
                     val p = downloadSong(info)
-                    Players.getInstantce().addAudio(p.toNioPath())
+                    Players.getInstance().addAudio(p.toNioPath())
                 } catch (e: Exception) {
                     throw RuntimeException(e)
                 }
@@ -108,9 +112,9 @@ class UIFactory : ToolWindowFactory {
         )
 
         private fun getInfoString(info: SongSearchResponse.SongInfo): String {
-            val sb = StringBuilder("id: ").append(info.id)
-                .append("\nname: ").append(info.name)
-                .append("\nartists: ")
+            val sb = StringBuilder("ID: ").append(info.id)
+                .append("\nName: ").append(info.name)
+                .append("\nArtists: ")
 
             with(info.artists.iterator()) {
                 while (hasNext()) {
@@ -121,8 +125,8 @@ class UIFactory : ToolWindowFactory {
                 }
             }
 
-            sb.append("\nduration: ").append(info.duration)
-                .append("\nalias: ")
+            sb.append("\nDuration: ").append(info.duration.toLong().msToFormattedTime())
+                .append("\nAlias: ")
 
             with(info.alias.iterator()) {
                 while (hasNext()) {
@@ -140,7 +144,138 @@ class UIFactory : ToolWindowFactory {
         }
 
         private fun playerTab() = JBPanel<JBPanel<*>>(BorderLayout()).apply {
+            fun getDescFromPath(p: Path): String {
+                val config = CacheConfig.getInstance()
+                val indexesJson = Path.of("${config.cacheDir}/song_indexes.json")
+                    .createIfNotExists().readText()
+                if (indexesJson.isEmpty())
+                    return p.toFile().name
+                val realName = p.toFile().nameWithoutExtension
+                if (realName.isDigit()) {
+                    val indexes =
+                        Bundles.GSON.fromJson(indexesJson, Array<SongSearchResponse.SongInfo>::class.java)
+                    indexes.find { it.id == realName.toLong() }
+                        ?.let { return it.name }
+                }
+                return p.toFile().name
+            }
 
+            fun getSongDesc(p: String, metaData: Map<String, String>): String {
+                if (p.isEmpty())
+                    return ""
+                val config = CacheConfig.getInstance()
+                val indexesJson = Path.of("${config.cacheDir}/song_indexes.json")
+                    .createIfNotExists().readText()
+                val sb = StringBuilder()
+                if (indexesJson.isEmpty())
+                    sb.append("Path: ").append(p)
+                        .append("\nFrom: Unknown")
+                        .append("\nError: Can not get Song Indexes.")
+                else {
+                    val realName = p.toNioPath().toFile().nameWithoutExtension
+                    if (realName.isDigit()) {
+                        val info =
+                            Bundles.GSON.fromJson(indexesJson, Array<SongSearchResponse.SongInfo>::class.java)
+                                .find { it.id == realName.toLong() }
+
+                        if (info == null)
+                            sb.append("ID: ").append(realName)
+                                .append("\nFrom: Unknown")
+                                .append("\nError: id is not in Song Indexes.")
+                        else {
+                            sb.append(getInfoString(info))
+                        }
+                    } else
+                        sb.append("Path: ").append(p)
+                            .append("\nFrom: Unknown")
+                            .append("\nError: Non-number id.")
+                }
+
+                sb.append("\n--------------------------\nMetaData: ")
+                metaData.forEach {
+                    sb.append("\n\t").append(it.key).append(':').append(it.value)
+                }
+                return sb.toString()
+            }
+
+            val players = Players.getInstance()
+            val mainPanel = JBPanel<JBPanel<*>>(BorderLayout())
+            val progressPanel = JBPanel<JBPanel<*>>(BorderLayout())
+
+            val progressBar = JProgressBar(SyncRangeModel())
+            val progressLabel = JBLabel(Bundles.message("lable.process", "null", "null"))
+            val stopBtn = JButton(Bundles.message("button.play.continue")).apply {
+                addActionListener {
+                    if (players.isAdjusting()) {
+                        if (!players.isStop())
+                            players.stop()
+                        else
+                            players.replay()
+                    }
+                    text = Bundles.message("button.play.continue")
+                }
+            }
+            progressPanel.add(progressLabel, BorderLayout.WEST)
+            progressPanel.add(progressBar, BorderLayout.CENTER)
+            progressPanel.add(JBPanel<JBPanel<*>>().apply {
+                add(stopBtn)
+                add(JButton(Bundles.message("button.play.clear")).apply {
+                    addActionListener {
+                        players.end()
+                        players.clear()
+                        players.keep()
+                    }
+                })
+            }, BorderLayout.EAST)
+
+            var last = ""
+            val list = JBList<String>()
+            val current = JBTextArea().apply {
+                columns = 40
+                autoscrolls = true
+                isEditable = false
+            }
+            // update info at 20 tps, if needed
+            // 260026(api, ms), 260 * 1000 = 260000(actual, ms), 260075102(ffmpeg, ns)
+            ThreadPool.task(50L) {
+                progressBar.updateUI()
+                players.playList()
+                    .map { getDescFromPath(it) }
+                    .takeIf {
+                        if (list.model.size != it.size)
+                            return@takeIf true
+                        it.forEachIndexed { index, item ->
+                            if (list.model.getElementAt(index) != item)
+                                return@takeIf true
+                        }
+                        return@takeIf false
+                    }?.let {
+                        if (list.selectedIndex >= it.size)
+                            list.selectedIndex = it.size - 1
+                        list.setListData(it.toTypedArray())
+                    }
+                if (last != players.current()) {
+                    last = players.current()
+                    current.text = getSongDesc(last, players.currentMetaData())
+                }
+
+                if (players.isAdjusting()) {
+                    progressLabel.text = Bundles.message(
+                        "lable.process",
+                        (players.progress().toLong() / 1000L).msToFormattedTime(),
+                        (players.length() / 1000L).msToFormattedTime()
+                    )
+                    if (!players.isStop())
+                        stopBtn.text = Bundles.message("button.play.stop")
+                } else if (progressLabel.text.isEmpty() || progressLabel.text[0] != 'n')
+                    progressLabel.text = Bundles.message("lable.process", "null", "null")
+            }
+            mainPanel.add(JBScrollPane(list), BorderLayout.CENTER)
+            mainPanel.add(JBScrollPane(current), BorderLayout.EAST)
+
+            add(progressPanel, BorderLayout.SOUTH)
+            add(mainPanel, BorderLayout.CENTER)
+            updateUI()
         }
 
         private fun info(info: SongSearchResponse.SongInfo) {
@@ -189,7 +324,7 @@ class UIFactory : ToolWindowFactory {
             val topPanel = JBPanel<JBPanel<*>>(BorderLayout())
             val infoPanel = JBPanel<JBPanel<*>>(BorderLayout())
             val bottomPanel = JBPanel<JBPanel<*>>()
-            val player = Players.getInstantce()
+            val player = Players.getInstance()
 
             infoPanel.add(infoText, BorderLayout.CENTER)
             bottomPanel.add(JButton(Bundles.message("button.download.cache")).apply {
@@ -332,7 +467,7 @@ class UIFactory : ToolWindowFactory {
                         val cur = playLists[index]
                         val config = CacheConfig.getInstance()
                         val cachedSongDir = Path.of("${config.cacheDir}/songs/")
-                        val players = Players.getInstantce()
+                        val players = Players.getInstance()
                         if (cachedSongDir.notExists() || !cachedSongDir.isDirectory())
                             return@addActionListener
 
@@ -378,7 +513,7 @@ class UIFactory : ToolWindowFactory {
                         0 -> data.name
                         1 -> data.id.toString()
                         2 -> data.artists.map { it.name }.toString()
-                        3 -> data.duration.toString()
+                        3 -> data.duration.toLong().msToFormattedTime()
                         4 -> data.alias.contentToString()
                         else -> data.id.toString()
                     }

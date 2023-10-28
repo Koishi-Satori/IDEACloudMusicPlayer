@@ -4,6 +4,7 @@ import com.intellij.util.io.createFile
 import com.intellij.util.io.isFile
 import top.kkoishi.cloudmusic.response.SongSearchResponse
 import top.kkoishi.cloudmusic.util.StringExtension.isDigit
+import top.kkoishi.ideacloudmusicplayer.Bundles.msToFormattedTime
 import top.kkoishi.ideacloudmusicplayer.io.CacheConfig
 import top.kkoishi.ideacloudmusicplayer.io.IOUtil.createIfNotExists
 import java.nio.file.Path
@@ -55,7 +56,7 @@ data class PlayList(val name: String, var songs: LongArray) {
                             sb.append(", ")
                         }
                     }
-                    sb.append("\nDuration: ").append(info.duration)
+                    sb.append("\nDuration: ").append(info.duration.toLong().msToFormattedTime())
                 }
             } else
                 sb.append("\nid: ").append(it)

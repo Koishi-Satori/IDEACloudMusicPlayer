@@ -5,6 +5,7 @@ import com.intellij.DynamicBundle
 import org.jetbrains.annotations.PropertyKey
 import top.kkoishi.cloudmusic.CloudMusic
 import top.kkoishi.cloudmusic.Config
+import java.text.DateFormat
 
 private const val BUNDLE = "messages.all"
 
@@ -25,4 +26,30 @@ object Bundles : DynamicBundle(BUNDLE) {
     @JvmStatic
     fun message(@PropertyKey(resourceBundle = BUNDLE) key: String, vararg params: Any) =
         getMessage(key, *params)
+
+    @JvmStatic
+    fun Long.msToFormattedTime(): String {
+        val totalSec = this / 1000
+        val hour = totalSec / (60 * 60)
+        val hourRest = totalSec - hour * (60 * 60)
+        val min = hourRest / 60
+        val sec = hourRest - min * 60
+        val sb = StringBuilder()
+
+        if (hour < 10)
+            sb.append('0').append(hour)
+        else
+            sb.append(hour)
+        sb.append(':')
+        if (min < 10)
+            sb.append('0').append(min)
+        else
+            sb.append(min)
+        sb.append(':')
+        if (sec < 10)
+            sb.append('0').append(sec)
+        else
+            sb.append(sec)
+        return sb.toString()
+    }
 }

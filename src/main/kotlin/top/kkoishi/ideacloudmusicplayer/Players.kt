@@ -1,5 +1,6 @@
 package top.kkoishi.ideacloudmusicplayer
 
+import com.intellij.openapi.util.io.toCanonicalPath
 import org.bytedeco.ffmpeg.global.avutil
 import org.bytedeco.javacv.FFmpegFrameGrabber
 import org.bytedeco.javacv.Frame
@@ -19,28 +20,28 @@ import kotlin.io.path.exists
 import kotlin.io.path.inputStream
 
 class Players private constructor() : Runnable {
+    private val lock = Any()
     private val playQueue = ArrayDeque<Path>()
     private val player = AudioPlayer()
-    val end = AtomicBoolean(false)
+    private val end = AtomicBoolean(false)
+    private var cur: String = ""
 
-    fun addAudio(audioPath: Path) {
-        synchronized(playQueue) {
-            if (audioPath.exists()) {
-                playQueue.addFirst(audioPath)
-                println("Add Audio: $audioPath")
-            }
+    fun addAudio(audioPath: Path) = synchronized(lock) {
+        if (audioPath.exists()) {
+            playQueue.addFirst(audioPath)
+            println("Add Audio: $audioPath")
         }
     }
 
-    fun clear() = synchronized(playQueue) {
+    fun clear() = synchronized(lock) {
         playQueue.clear()
     }
 
-    fun contains(audioPath: Path): Boolean = synchronized(playQueue) {
+    fun contains(audioPath: Path): Boolean = synchronized(lock) {
         return playQueue.contains(audioPath)
     }
 
-    fun end() {
+    fun end() = synchronized(lock) {
         player.end()
         end.set(true)
     }
@@ -49,8 +50,39 @@ class Players private constructor() : Runnable {
         end.set(false)
     }
 
-    fun stop() {
+    fun replay() = synchronized(lock) {
+        player.replay()
+    }
+
+    fun current(): String = synchronized(lock) {
+        return cur
+    }
+
+    fun currentMetaData(): MutableMap<String, String> = synchronized(lock) {
+        return player.metaData()
+    }
+
+    fun playList(): Array<Path> = synchronized(lock) {
+        return playQueue.toTypedArray()
+    }
+
+    fun isStop(): Boolean = synchronized(lock) {
+        return player.isStop()
+    }
+
+    fun stop() = synchronized(lock) {
         player.stop()
+    }
+
+    @Suppress("NOTHING_TO_INLINE")
+    inline fun isAdjusting(): Boolean = !progress().isNaN() || length() != -1L
+
+    fun progress(): Double = synchronized(lock) {
+        return player.progress()
+    }
+
+    fun length(): Long = synchronized(lock) {
+        return player.length()
     }
 
     override fun run() {
@@ -61,10 +93,11 @@ class Players private constructor() : Runnable {
                 continue
             }
             var p: Path? = null
-            synchronized(playQueue) {
+            synchronized(lock) {
                 if (!playQueue.isEmpty() && player.isEnd()) {
                     p = playQueue.removeFirst()
                     playQueue.addLast(p!!)
+                    cur = p!!.toCanonicalPath()
                 }
             }
             if (p != null)
@@ -77,14 +110,13 @@ class Players private constructor() : Runnable {
         private val PLAYERS = Players()
 
         init {
-            Thread(PLAYERS, "KKoishi_Player").start()
+            ThreadPool.task(PLAYERS)
         }
 
-        fun getInstantce() = PLAYERS
+        fun getInstance() = PLAYERS
     }
 
     class AudioPlayer {
-        private val lock = Any()
         lateinit var grabber: FFmpegFrameGrabber
         private var format: AudioFormat? = null
         private lateinit var line: SourceDataLine
@@ -104,41 +136,53 @@ class Players private constructor() : Runnable {
         private var stop = false
         private var end = false
 
-        fun initialized(): Boolean {
-            return this::grabber.isInitialized
-        }
-
         fun isEnd(): Boolean {
-            synchronized(lock) {
-                return end
-            }
+            return end
         }
 
         fun end() {
-            synchronized(lock) {
-                if (this::grabber.isInitialized) {
-                    grabber.close()
-                    line.close()
-                }
-                end = true
+            if (this::grabber.isInitialized || end) {
+                grabber.close()
+                line.close()
             }
+            end = true
         }
 
         fun stop() {
-            synchronized(lock) {
-                stop = true
-            }
+            stop = true
         }
 
         fun replay() {
-            synchronized(lock) {
-                stop = false
-            }
+            stop = false
         }
 
         fun isStop(): Boolean {
-            synchronized(lock) {
-                return stop
+            return stop
+        }
+
+        fun length(): Long {
+            return if (!this::grabber.isInitialized || end)
+                -1L
+            else
+                try {
+                    grabber.lengthInTime
+                } catch (npe: NullPointerException) {
+                    -1L
+                }
+        }
+
+        fun progress(): Double {
+            return if (!this::line.isInitialized || end)
+                Double.NaN
+            else
+                line.longFramePosition * (1000000.0 / line.format.sampleRate)
+        }
+
+        fun metaData(): MutableMap<String, String> {
+            return if (!this::grabber.isInitialized || end) {
+                mutableMapOf()
+            } else {
+                grabber.metadata
             }
         }
 
@@ -147,10 +191,8 @@ class Players private constructor() : Runnable {
             val sec = 60
             var frame: Frame?
 
-            synchronized(lock) {
-                end = false
-                stop = false
-            }
+            end = false
+            stop = false
             grabber.start()
             grabber.timestamp = sec * 1000000L
             sampleFormat = grabber.sampleFormat
