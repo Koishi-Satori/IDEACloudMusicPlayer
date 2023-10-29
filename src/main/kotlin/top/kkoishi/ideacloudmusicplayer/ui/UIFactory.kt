@@ -257,7 +257,9 @@ class UIFactory : ToolWindowFactory {
                     }
                 if (last != players.current()) {
                     last = players.current()
-                    current.text = getSongDesc(last, players.currentMetaData())
+                    synchronized(current) {
+                        current.text = getSongDesc(last, players.currentMetaData())
+                    }
                 }
 
                 if (isAdjusting) {
