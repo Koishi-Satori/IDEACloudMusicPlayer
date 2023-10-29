@@ -1,17 +1,17 @@
 package top.kkoishi.ideacloudmusicplayer
 
+import com.google.gson.Gson
 import com.google.gson.GsonBuilder
 import com.intellij.DynamicBundle
 import org.jetbrains.annotations.PropertyKey
 import top.kkoishi.cloudmusic.CloudMusic
 import top.kkoishi.cloudmusic.Config
-import java.text.DateFormat
 
 private const val BUNDLE = "messages.all"
 
 object Bundles : DynamicBundle(BUNDLE) {
     @JvmStatic
-    val GSON = GsonBuilder().setPrettyPrinting().serializeNulls().create()
+    val GSON: Gson = GsonBuilder().setPrettyPrinting().serializeNulls().create()
 
     @JvmStatic
     val CLOUD_MUSIC_API = CloudMusic(

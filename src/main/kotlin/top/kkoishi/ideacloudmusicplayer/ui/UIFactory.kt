@@ -235,7 +235,7 @@ class UIFactory : ToolWindowFactory {
             }
             // update info at 20 tps, if needed
             // 260026(api, ms), 260 * 1000 = 260000(actual, ms), 260075102(ffmpeg, ns)
-            ThreadPool.task(50L) {
+            ThreadPool.task(50L, "info_update") {
                 val progress = syncModel.value
                 val length = syncModel.maximum
                 val isAdjusting = syncModel.valueIsAdjusting

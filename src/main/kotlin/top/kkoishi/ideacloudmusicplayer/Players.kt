@@ -110,7 +110,7 @@ class Players private constructor() : Runnable {
         private val PLAYERS = Players()
 
         init {
-            ThreadPool.task(PLAYERS)
+            ThreadPool.task(task = PLAYERS)
         }
 
         fun getInstance() = PLAYERS
