@@ -1,0 +1,5 @@
+// edit and copy the next text.
+// then rename this file to "config.json" and delete the comments
+{
+  "service_api": "{your api url}"
+}
