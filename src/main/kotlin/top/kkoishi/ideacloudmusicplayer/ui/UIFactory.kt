@@ -2,7 +2,6 @@ package top.kkoishi.ideacloudmusicplayer.ui
 
 import com.intellij.openapi.diagnostic.thisLogger
 import com.intellij.openapi.project.Project
-import com.intellij.openapi.ui.asSequence
 import com.intellij.openapi.ui.popup.JBPopupFactory
 import com.intellij.openapi.util.io.toCanonicalPath
 import com.intellij.openapi.util.io.toNioPath
@@ -45,7 +44,6 @@ import javax.swing.event.MouseInputAdapter
 import kotlin.NullPointerException
 import kotlin.collections.ArrayDeque
 import kotlin.io.path.isDirectory
-import kotlin.io.path.nameWithoutExtension
 import kotlin.io.path.notExists
 import kotlin.io.path.writeText
 
@@ -201,8 +199,8 @@ class UIFactory : ToolWindowFactory {
             val players = Players.getInstance()
             val mainPanel = JBPanel<JBPanel<*>>(BorderLayout())
             val progressPanel = JBPanel<JBPanel<*>>(BorderLayout())
-
-            val progressBar = JProgressBar(SyncRangeModel())
+            val syncModel = SyncRangeModel()
+            val progressBar = JProgressBar(syncModel)
             val progressLabel = JBLabel(Bundles.message("lable.process", "null", "null"))
             val stopBtn = JButton(Bundles.message("button.play.continue")).apply {
                 addActionListener {
@@ -238,6 +236,9 @@ class UIFactory : ToolWindowFactory {
             // update info at 20 tps, if needed
             // 260026(api, ms), 260 * 1000 = 260000(actual, ms), 260075102(ffmpeg, ns)
             ThreadPool.task(50L) {
+                val progress = syncModel.value
+                val length = syncModel.maximum
+                val isAdjusting = syncModel.valueIsAdjusting
                 progressBar.updateUI()
                 players.playList()
                     .map { getDescFromPath(it) }
@@ -259,11 +260,11 @@ class UIFactory : ToolWindowFactory {
                     current.text = getSongDesc(last, players.currentMetaData())
                 }
 
-                if (players.isAdjusting()) {
+                if (isAdjusting) {
                     progressLabel.text = Bundles.message(
                         "lable.process",
-                        (players.progress().toLong() / 1000L).msToFormattedTime(),
-                        (players.length() / 1000L).msToFormattedTime()
+                        (progress.toLong() / 1000L).msToFormattedTime(),
+                        (length / 1000L).msToFormattedTime()
                     )
                     if (!players.isStop())
                         stopBtn.text = Bundles.message("button.play.stop")

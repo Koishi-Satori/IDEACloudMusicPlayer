@@ -117,7 +117,7 @@ class Players private constructor() : Runnable {
     }
 
     class AudioPlayer {
-        lateinit var grabber: FFmpegFrameGrabber
+        private lateinit var grabber: FFmpegFrameGrabber
         private var format: AudioFormat? = null
         private lateinit var line: SourceDataLine
         private lateinit var info: DataLine.Info
@@ -214,10 +214,10 @@ class Players private constructor() : Runnable {
                 }
                 processAudio(frame.samples)
             }
+            end()
             grabber.close()
             line.close()
             ins.close()
-            end()
         }
 
         private fun initializeSourceDataLine(grabber: FFmpegFrameGrabber) {
