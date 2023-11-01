@@ -199,8 +199,7 @@ class UIFactory : ToolWindowFactory {
             val players = Players.getInstance()
             val mainPanel = JBPanel<JBPanel<*>>(BorderLayout())
             val progressPanel = JBPanel<JBPanel<*>>(BorderLayout())
-            val syncModel = SyncRangeModel()
-            val progressBar = JProgressBar(syncModel)
+            val progressBar = JProgressBar(0, 0)
             val progressLabel = JBLabel(Bundles.message("lable.process", "null", "null"))
             val stopBtn = JButton(Bundles.message("button.play.continue")).apply {
                 addActionListener {
@@ -236,10 +235,16 @@ class UIFactory : ToolWindowFactory {
             // update info at 20 tps, if needed
             // 260026(api, ms), 260 * 1000 = 260000(actual, ms), 260075102(ffmpeg, ns)
             ThreadPool.task(50L, "info_update") {
-                val progress = syncModel.value
-                val length = syncModel.maximum
-                val isAdjusting = syncModel.valueIsAdjusting
-                progressBar.updateUI()
+                updateUI()
+                val progress = players.progress()
+                val length = players.length()
+                val isAdjusting = players.isAdjusting()
+                val stop = players.isStop()
+                val currentSong = players.current()
+                if (length != -1L)
+                    progressBar.maximum = (length % Int.MAX_VALUE).toInt()
+                progressBar.value = if (progress.isNaN()) 0 else (progress % Int.MAX_VALUE).toInt()
+                println("$progress $length $isAdjusting $stop")
                 players.playList()
                     .map { getDescFromPath(it) }
                     .takeIf {
@@ -255,8 +260,9 @@ class UIFactory : ToolWindowFactory {
                             list.selectedIndex = it.size - 1
                         list.setListData(it.toTypedArray())
                     }
-                if (last != players.current()) {
-                    last = players.current()
+                if (last != currentSong) {
+                    last = currentSong
+
                     synchronized(current) {
                         current.text = getSongDesc(last, players.currentMetaData())
                     }
@@ -268,7 +274,7 @@ class UIFactory : ToolWindowFactory {
                         (progress.toLong() / 1000L).msToFormattedTime(),
                         (length / 1000L).msToFormattedTime()
                     )
-                    if (!players.isStop())
+                    if (!stop)
                         stopBtn.text = Bundles.message("button.play.stop")
                 } else if (progressLabel.text.isEmpty() || progressLabel.text[0] != 'n')
                     progressLabel.text = Bundles.message("lable.process", "null", "null")
