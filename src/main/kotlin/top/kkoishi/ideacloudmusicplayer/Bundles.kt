@@ -10,6 +10,7 @@ import top.kkoishi.cloudmusic.Config
 private const val BUNDLE = "messages.all"
 
 object Bundles : DynamicBundle(BUNDLE) {
+
     @JvmStatic
     val GSON: Gson = GsonBuilder().setPrettyPrinting().serializeNulls().create()
 

@@ -244,7 +244,6 @@ class UIFactory : ToolWindowFactory {
                 if (length != -1L)
                     progressBar.maximum = (length % Int.MAX_VALUE).toInt()
                 progressBar.value = if (progress.isNaN()) 0 else (progress % Int.MAX_VALUE).toInt()
-                println("$progress $length $isAdjusting $stop")
                 players.playList()
                     .map { getDescFromPath(it) }
                     .takeIf {
